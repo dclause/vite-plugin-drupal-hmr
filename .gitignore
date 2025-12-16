@@ -1,0 +1,17 @@
+# IDE and Editor Directories
+.vscode/
+.idea/
+
+# Standard package manager directories
+/node_modules
+/dist
+
+# Operating System Files
+.DS_Store
+*.local
+*.Zone.Identifier
+
+# Package manager debug logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
