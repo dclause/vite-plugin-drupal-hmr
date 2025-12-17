@@ -1,10 +1,12 @@
 import { defineConfig } from "tsup";
 
-export default defineConfig({
-  entry: ["src/index.ts"],
-  format: ["cjs", "esm"], // Build for both CommonJS and ES Modules
+export default defineConfig((options) => ({
+  entry: ["src/index.ts", "src/client.ts"],
+  format: ["esm"], // Build for both CommonJS and ES Modules
   dts: true, // Generate declaration files (.d.ts)
   clean: true, // Clean the output directory before building
-  sourcemap: true,
-  splitting: false,
-});
+  external: ["virtual:drupal-hmr-options"],
+  esbuildOptions(opts) {
+    opts.drop = options.watch ? [] : ["console"];
+  },
+}));
