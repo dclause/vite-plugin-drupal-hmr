@@ -1,12 +1,44 @@
-import { defineConfig } from "tsup";
+import { defineConfig, type Options } from "tsup";
 
-export default defineConfig((options) => ({
-  entry: ["src/index.ts", "src/hmr.ts"],
-  format: ["esm"], // Build for both CommonJS and ES Modules
-  dts: true, // Generate declaration files (.d.ts)
-  clean: true, // Clean the output directory before building
-  external: ["virtual:drupal-hmr-options"],
-  esbuildOptions(opts) {
-    opts.drop = options.watch ? [] : ["console"];
-  },
-}));
+export default defineConfig((options: Options) => {
+  const common: Options = {
+    dts: true,
+    splitting: false,
+    clean: false,
+    // Note: tsup utilise esbuild directement, on utilise donc le type Options['esbuildOptions']
+    esbuildOptions(opts) {
+      if (!options.watch) {
+        opts.drop = ["console"];
+      }
+    },
+  };
+
+  return [
+    // 1. Plugin Logic (Node.js)
+    {
+      ...common,
+      entry: ["src/index.ts"],
+      format: ["cjs", "esm"],
+      clean: true,
+      external: ["vite"],
+      shims: true, // for __dirname  hybrid support CJS/ESM
+      outExtension({ format }) {
+        return {
+          js: format === "cjs" ? ".cjs" : ".js",
+        };
+      },
+    },
+
+    // 2. Client Script (Browser)
+    {
+      ...common,
+      entry: ["src/hmr.ts"],
+      format: ["esm"],
+      dts: false,
+      external: [],
+      outExtension() {
+        return { js: ".js" };
+      },
+    },
+  ];
+});

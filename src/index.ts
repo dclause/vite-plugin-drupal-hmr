@@ -1,6 +1,5 @@
 import { Plugin } from "vite";
-import path, { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import path, { dirname, join, relative } from "node:path";
 import { existsSync } from "node:fs";
 import type { DrupalHmrOptions, TwigUpdateData } from "./types";
 import { TWIG_EVENT, TwigType } from "./constants";
@@ -8,8 +7,6 @@ import { TWIG_EVENT, TwigType } from "./constants";
 const PLUGIN_NAME = "twig-hmr";
 const VIRTUAL_NAME = `virtual:${PLUGIN_NAME}`;
 
-// Get the current directory (standard ESM workaround for __dirname)
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientPath = path.resolve(__dirname, "./hmr.js");
 
 /**
@@ -19,20 +16,18 @@ const clientPath = path.resolve(__dirname, "./hmr.js");
  */
 const detectThemePath = (root: string): string => {
   let current = root;
-  const pathSegments: string[] = [];
 
   while (current !== dirname(current)) {
     if (
       existsSync(join(current, "core")) &&
       existsSync(join(current, "index.php"))
     ) {
-      return pathSegments.join("/");
+      return relative(current, root);
     }
-    pathSegments.unshift(basename(current));
     current = dirname(current);
   }
 
-  return pathSegments.join("/");
+  return "";
 };
 
 const getTemplateId = (file: string, ctx: DrupalHmrOptions): string => {
@@ -49,7 +44,7 @@ export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
     name: PLUGIN_NAME,
     apply: "serve",
 
-    // Auto-detect the themePath option if not provided.
+    // --- RESOLVE OPTIONAL OPTIONS ---
     configResolved(config) {
       options.themePath = options.themePath || detectThemePath(config.root);
       options.themePath = options.themePath.endsWith("/")
@@ -62,23 +57,23 @@ export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
 
     // --- INJECT IMPORT ---
     transform(code, id) {
-      if (/\.js$/.test(id)) {
-        console.log(`[Drupal HMR] Injecting client into: ${id}`);
-        return {
-          // Inject the import at the very top of the script
-          code: `import '${VIRTUAL_NAME}';\n${code}`,
-          map: null,
-        };
-      }
-      return code;
+      // Ignore node_modules
+      // Support ts, jsx, tsx, and js
+      // Inject only if not already present (safety check)
+      if (id.includes("node_modules")) return;
+      if (!/\.(js|mjs|ts|jsx|tsx)$/.test(id)) return;
+      if (code.includes(VIRTUAL_NAME)) return;
+
+      console.log(`[Drupal HMR] Injecting client into: ${id}`);
+      return {
+        code: `import '${VIRTUAL_NAME}';\n${code}`,
+        map: null,
+      };
     },
 
     // --- POINT TO REAL FILE ---
     resolveId(id) {
-      // Load the virtual module, proce
       if (id === VIRTUAL_NAME || id === `/${VIRTUAL_NAME}`) {
-        // Return the absolute path to the real file on disk.
-        // Vite will load it, process TS if needed and serve it.
         return clientPath;
       }
     },

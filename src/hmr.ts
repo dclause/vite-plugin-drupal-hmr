@@ -1,5 +1,3 @@
-// // @ts-expect-error Virtual module handled by plugin
-// import options from "virtual:drupal-hmr-options";
 import type { TemplateInfo, TemplatePair, TwigUpdateData } from "./types";
 import { TWIG_EVENT, TwigType } from "./constants";
 
@@ -8,15 +6,6 @@ declare global {
 }
 
 console.log("[Drupal HMR] Client handler initialized");
-
-/**
- * Check if the Twig debug info are available on the current page.
- */
-const isTwigDevMode = () => {
-  const currentHtml = document.documentElement.innerHTML;
-  const found = currentHtml.match("<!-- THEME DEBUG -->");
-  return found !== null && found.length > 0;
-};
 
 if (import.meta.hot && !globalThis.__DRUPAL_HMR_INSTALLED__) {
   globalThis.__DRUPAL_HMR_INSTALLED__ = true;
@@ -30,119 +19,105 @@ if (import.meta.hot && !globalThis.__DRUPAL_HMR_INSTALLED__) {
   import.meta.hot.on(TWIG_EVENT, async (ctx: TwigUpdateData) => {
     console.log(`[Drupal HMR] Update received for: ${ctx.file}`);
 
-    const currentHtml = document.documentElement.innerHTML;
-    const url = new URL(window.location.href);
-    const response = await fetch(url);
-    const dom = await response.text();
-    const currentHtmlTemplateList = findTemplateInHtml(currentHtml, ctx);
-    const reloadedHtmlTemplateList = findTemplateInHtml(dom, ctx);
-
-    if (
-      currentHtmlTemplateList.length <= 0 ||
-      reloadedHtmlTemplateList.length <= 0 ||
-      currentHtmlTemplateList.length !== reloadedHtmlTemplateList.length
-    ) {
-      location.reload();
-      return;
+    try {
+      await handleUpdate(ctx);
+    } catch (e) {
+      console.error("[Drupal HMR] Update failed", e);
+      window.location.reload();
     }
-
-    const commentWalker = document.createTreeWalker(
-      document.querySelector("body")!,
-      NodeFilter.SHOW_COMMENT,
-      null,
-    );
-    const templateCommentList: TemplatePair<Comment>[] =
-      searchTemplateCommentList(commentWalker, ctx);
-
-    reloadedHtmlTemplateList.forEach((htmlTemplate, index) => {
-      const templateInfo = {
-        template: htmlTemplate[0],
-        comment: templateCommentList[index],
-      };
-      replaceTemplate(templateInfo);
-    });
   });
 
   import.meta.hot.accept();
 }
 
-const replaceTemplate = ({ template, comment }: TemplateInfo): void => {
-  const toBeRemoved: ChildNode[] = [];
-  let node: Node | null = comment.begin.nextSibling;
+async function handleUpdate(ctx: TwigUpdateData) {
+  const response = await fetch(window.location.href);
+  const domText = await response.text();
 
-  while (node) {
-    if (
-      node.nodeType === Node.COMMENT_NODE &&
-      (node as Comment).data === comment.end.data
-    ) {
-      break;
-    }
-    toBeRemoved.push(node as ChildNode);
-    node = node.nextSibling;
+  const currentTemplates = findTemplateInHtml(
+    document.documentElement.innerHTML,
+    ctx,
+  );
+  const reloadedTemplates = findTemplateInHtml(domText, ctx);
+
+  // Vérification de l'intégrité (Early return)
+  if (
+    currentTemplates.length === 0 ||
+    currentTemplates.length !== reloadedTemplates.length
+  ) {
+    location.reload();
+    return;
   }
 
-  toBeRemoved.forEach((node) => node.remove());
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_COMMENT,
+  );
+  const comments = searchTemplateCommentList(walker, ctx);
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(template, "text/html");
+  reloadedTemplates.forEach((match, i) => {
+    replaceTemplate({ template: match[0], comment: comments[i] });
+  });
+}
+
+/**
+ * Check if the Twig debug info are available on the current page.
+ */
+function isTwigDevMode(): boolean {
+  return document.documentElement.innerHTML.includes("<!-- THEME DEBUG -->");
+}
+
+function replaceTemplate({ template, comment }: TemplateInfo): void {
   const parent = comment.end.parentNode;
-
   if (!parent) return;
 
-  [...doc.body.childNodes]
-    .filter((n) => n.nodeType !== Node.COMMENT_NODE)
-    .forEach((n) => parent.insertBefore(n, comment.end));
-};
+  // Delete between two comments
+  const range = document.createRange();
+  range.setStartAfter(comment.begin);
+  range.setEndBefore(comment.end);
+  range.deleteContents();
 
-const searchTemplateCommentList = (
+  // Insert new content
+  const fragment = document.createRange().createContextualFragment(template);
+  parent.insertBefore(fragment, comment.end);
+}
+
+function searchTemplateCommentList(
   walker: TreeWalker,
   ctx: TwigUpdateData,
-): TemplatePair<Comment>[] => {
+): TemplatePair<Comment>[] {
+  const tags = getCommentContent(ctx);
+  if (!tags) return [];
+
+  const list: TemplatePair<Comment>[] = [];
+  let beginComment: Comment | null = null;
+  let node: Node | null;
+
+  while ((node = walker.nextNode())) {
+    const commentData = transformTextIntoComment((node as Comment).data);
+
+    if (commentData === tags.begin) {
+      beginComment = node as Comment;
+    } else if (beginComment && commentData === tags.end) {
+      list.push({ begin: beginComment, end: node as Comment });
+      beginComment = null;
+    }
+  }
+  return list;
+}
+
+function findTemplateInHtml(html: string, ctx: TwigUpdateData) {
   const output = getCommentContent(ctx);
   if (!output) return [];
 
-  let end = false;
-  let beginComment = undefined;
-  const list = [];
-
-  while (!end) {
-    const node = walker.nextNode();
-
-    if (node === null) {
-      end = true;
-    } else if (
-      transformTextIntoComment((node as Comment).data) === output.begin
-    ) {
-      beginComment = node;
-    } else if (
-      beginComment instanceof Node &&
-      transformTextIntoComment((node as Comment).data) === output.end
-    ) {
-      list.push({
-        begin: beginComment as Comment,
-        end: node as Comment,
-      });
-      beginComment = undefined;
-    }
-  }
-
-  return list;
-};
-
-const findTemplateInHtml = (html: string, ctx: TwigUpdateData) => {
-  const output = getCommentContent(ctx);
-  if (!output) {
-    return [];
-  }
   // Use matchAll because the template can be used multiple times in the same page.
   const regexp = new RegExp(`${output.begin}.*?${output.end}`, "gmsd");
-
   return [...html.matchAll(regexp)];
-};
+}
 
-const getCommentContent = (
+function getCommentContent(
   ctx: TwigUpdateData,
-): TemplatePair<string> | undefined => {
+): TemplatePair<string> | undefined {
   switch (ctx.templateType) {
     case TwigType.TEMPLATE:
       return {
@@ -155,8 +130,8 @@ const getCommentContent = (
         end: `<!-- 🥚 Component end: ${ctx.templateId} -->`,
       };
   }
-};
+}
 
-const transformTextIntoComment = (text: string): string => {
+function transformTextIntoComment(text: string): string {
   return `<!--${text}-->`;
-};
+}
