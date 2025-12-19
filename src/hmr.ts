@@ -1,12 +1,11 @@
 // // @ts-expect-error Virtual module handled by plugin
 // import options from "virtual:drupal-hmr-options";
-import {
-  Event,
-  TemplateInfo,
-  TemplatePair,
-  TwigType,
-  TwigUpdateData,
-} from "./interface";
+import type { TemplateInfo, TemplatePair, TwigUpdateData } from "./types";
+import { TWIG_EVENT, TwigType } from "./constants";
+
+declare global {
+  var __DRUPAL_HMR_INSTALLED__: boolean | undefined;
+}
 
 console.log("[Drupal HMR] Client handler initialized");
 
@@ -19,14 +18,16 @@ const isTwigDevMode = () => {
   return found !== null && found.length > 0;
 };
 
-if (import.meta.hot) {
+if (import.meta.hot && !globalThis.__DRUPAL_HMR_INSTALLED__) {
+  globalThis.__DRUPAL_HMR_INSTALLED__ = true;
+
   if (!isTwigDevMode()) {
     throw new Error(
       "You have to setup twig dev mode in your Drupal install in order to make HMR work on template update.",
     );
   }
 
-  import.meta.hot.on(Event.TWIG_UPDATE, async (ctx: TwigUpdateData) => {
+  import.meta.hot.on(TWIG_EVENT, async (ctx: TwigUpdateData) => {
     console.log(`[Drupal HMR] Update received for: ${ctx.file}`);
 
     const currentHtml = document.documentElement.innerHTML;
@@ -61,6 +62,8 @@ if (import.meta.hot) {
       replaceTemplate(templateInfo);
     });
   });
+
+  import.meta.hot.accept();
 }
 
 const replaceTemplate = ({ template, comment }: TemplateInfo): void => {

@@ -2,32 +2,22 @@ import { Plugin } from "vite";
 import path, { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { Event, TwigType, TwigUpdateData } from "./interface";
+import type { DrupalHmrOptions, TwigUpdateData } from "./types";
+import { TWIG_EVENT, TwigType } from "./constants";
 
 const PLUGIN_NAME = "twig-hmr";
 const VIRTUAL_NAME = `virtual:${PLUGIN_NAME}`;
-const VIRTUAL_OPTIONS_NAME = "virtual:drupal-hmr-options";
 
 // Get the current directory (standard ESM workaround for __dirname)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientPath = path.resolve(__dirname, "./hmr.js");
-/**
- * Define options users can pass to your plugin.
- */
-export type DrupalHmrOptions = {
-  // (optional, auto-detected) A custom base path from drupal root to the vite project root.
-  // usually: /themes/custom/your-theme
-  themePath?: string;
-  // (optional, auto-detected) The theme machine-name
-  themeName?: string;
-};
 
 /**
  * Returns the current theme path relative to Drupal root.
  * This relative path is built by traversing upwards from Vite base path until
  * the 'index.php' file is found along the 'core' folder.
  */
-const detectDrupalthemePath = (root: string): string => {
+const detectThemePath = (root: string): string => {
   let current = root;
   const pathSegments: string[] = [];
 
@@ -61,8 +51,7 @@ export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
 
     // Auto-detect the themePath option if not provided.
     configResolved(config) {
-      options.themePath =
-        options.themePath || detectDrupalthemePath(config.root);
+      options.themePath = options.themePath || detectThemePath(config.root);
       options.themePath = options.themePath.endsWith("/")
         ? options.themePath.slice(0, -1)
         : options.themePath;
@@ -92,15 +81,6 @@ export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
         // Vite will load it, process TS if needed and serve it.
         return clientPath;
       }
-      if (id === VIRTUAL_OPTIONS_NAME) {
-        return "\0" + VIRTUAL_OPTIONS_NAME;
-      }
-    },
-
-    load(id) {
-      if (id === "\0" + VIRTUAL_OPTIONS_NAME) {
-        return `export default ${JSON.stringify(options)}`;
-      }
     },
 
     // --- SERVER SIDE ---
@@ -123,7 +103,7 @@ export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
 
       server.ws.send({
         type: "custom",
-        event: Event.TWIG_UPDATE,
+        event: TWIG_EVENT,
         data: {
           ...clientData,
           config: server.config,
