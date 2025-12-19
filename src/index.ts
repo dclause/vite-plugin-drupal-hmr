@@ -1,33 +1,43 @@
 import { Plugin } from "vite";
 import path, { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as fs from "node:fs";
 import { existsSync } from "node:fs";
+import { Event, TwigType, TwigUpdateData } from "./interface";
 
-const PLUGIN_NAME = "drupal-hmr";
-const VIRTUAL_NAME = `virtual:${PLUGIN_NAME}`;
-const VIRTUAL_OPTIONS_NAME = "virtual:drupal-hmr-options";
+const PLUGIN_NAME = "twig-hmr";
+// const VIRTUAL_NAME = `virtual:${PLUGIN_NAME}`;
+// const VIRTUAL_OPTIONS_NAME = "virtual:drupal-hmr-options";
+
+const RUNTIME_CLIENT_RUNTIME_PATH = "/@vite-plugin-drupal-template-hmr-runtime";
+const RUNTIME_CLIENT_ENTRY_PATH = "/@vite-plugin-drupal-template-hmr";
+const composePreambleCode = (options: DrupalHmrOptions) => `
+import {doHMR} from "/${RUNTIME_CLIENT_RUNTIME_PATH.slice(1)}";
+doHMR();
+`;
 
 // Get the current directory (standard ESM workaround for __dirname)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientPath = path.resolve(__dirname, "./client.js");
+const clientPath = path.resolve(__dirname, "./hmr.js");
+const runtimeCode = `${fs.readFileSync(clientPath, "utf-8")};`;
 
 /**
  * Define options users can pass to your plugin
  */
-export interface DrupalHmrOptions {
+export type DrupalHmrOptions = {
   // A custom base path from your website root to your vite project root.
   // usually: /themes/custom/your-theme
   basePath?: string;
-}
+  themeName?: string;
+};
 
 /**
  * Returns the current theme path relative to Drupal root.
- *
  * This relative path is built by traversing upwards from Vite base path until
  * the 'index.php' file is found along the 'core' folder.
  */
-function getRelativeDrupalPath(currentPath: string): string {
-  let current = currentPath;
+const detectDrupalBasePath = (root: string): string => {
+  let current = root;
   const pathSegments: string[] = [];
 
   while (current !== dirname(current)) {
@@ -42,65 +52,89 @@ function getRelativeDrupalPath(currentPath: string): string {
   }
 
   return pathSegments.join("/");
-}
+};
+
+const getTemplateId = (file: string, ctx: DrupalHmrOptions): string => {
+  return file.match(new RegExp(`${ctx.basePath}/${TwigType.TEMPLATE}.*`))![0];
+};
+
+const getComponentId = (file: string, ctx: DrupalHmrOptions): string => {
+  const templateName = path.parse(file).name;
+  return `${ctx.themeName}:${templateName}`;
+};
 
 export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
-  let initialized = false;
-
   return {
     name: PLUGIN_NAME,
     apply: "serve",
 
     // Auto-detect the basePath option if not provided.
     configResolved(config) {
-      options.basePath = options.basePath || getRelativeDrupalPath(config.root);
-      console.log(`[Drupal HMR] Detected basePath: ${options.basePath}`);
+      options.basePath = options.basePath || detectDrupalBasePath(config.root);
+      options.basePath = options.basePath.endsWith("/")
+        ? options.basePath.slice(0, -1)
+        : options.basePath;
+      options.themeName =
+        options.themeName || options.basePath.split("/").pop();
+      console.log(`[Drupal HMR] Detected options: ${options}`);
     },
 
     // --- INJECT IMPORT ---
-    transform(code, id) {
-      if (!initialized && /\.js$/.test(id)) {
-        console.log(`[Twig HMR Plugin] Injecting client into: ${id}`);
-        initialized = true;
-        return {
-          // Inject the import at the very top of the script
-          code: `import '${VIRTUAL_NAME}';\n${code}`,
-          map: null,
-        };
-      }
+    transformIndexHtml() {
+      return [
+        {
+          tag: "script",
+          attrs: { type: "module" },
+          children: composePreambleCode(options),
+        },
+      ];
     },
 
     // --- POINT TO REAL FILE ---
     resolveId(id) {
-      // Load the virtual module, proce
-      if (id === VIRTUAL_NAME) {
-        // Return the absolute path to the real file on disk.
-        // Vite will load it, process TS if needed and serve it.
-        return clientPath;
-      }
-      if (id === VIRTUAL_OPTIONS_NAME) {
-        return "\0" + VIRTUAL_OPTIONS_NAME;
+      if (
+        id === RUNTIME_CLIENT_RUNTIME_PATH ||
+        id === RUNTIME_CLIENT_ENTRY_PATH
+      ) {
+        return id;
       }
     },
 
     load(id) {
-      if (id === "\0" + VIRTUAL_OPTIONS_NAME) {
-        return `export default ${JSON.stringify(options)}`;
+      if (id === RUNTIME_CLIENT_RUNTIME_PATH) {
+        return runtimeCode;
+      }
+      if (id === RUNTIME_CLIENT_ENTRY_PATH) {
+        return composePreambleCode(options);
       }
     },
 
     // --- SERVER SIDE ---
-    handleHotUpdate({ file, server, read }) {
-      if (file.endsWith(".twig")) {
-        Promise.resolve(read()).then((content: string) => {
-          server.ws.send({
-            type: "custom",
-            event: "custom:drupal-update",
-            data: { file, content },
-          });
-        });
-        return [];
+    handleHotUpdate({ file, server }) {
+      if (!file.endsWith(".twig")) return;
+
+      const clientData: TwigUpdateData = {
+        file,
+        templateType: TwigType.OTHER,
+        templateId: "",
+      };
+
+      if (file.includes(TwigType.TEMPLATE)) {
+        clientData.templateType = TwigType.TEMPLATE;
+        clientData.templateId = getTemplateId(file, options);
+      } else if (file.includes(TwigType.COMPONENT)) {
+        clientData.templateType = TwigType.COMPONENT;
+        clientData.templateId = getComponentId(file, options);
       }
+
+      server.ws.send({
+        type: "custom",
+        event: Event.TWIG_UPDATE,
+        data: {
+          ...clientData,
+          config: server.config,
+        },
+      });
     },
   };
 }
