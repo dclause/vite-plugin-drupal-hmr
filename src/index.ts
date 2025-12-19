@@ -1,33 +1,24 @@
 import { Plugin } from "vite";
 import path, { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import * as fs from "node:fs";
 import { existsSync } from "node:fs";
 import { Event, TwigType, TwigUpdateData } from "./interface";
 
 const PLUGIN_NAME = "twig-hmr";
-// const VIRTUAL_NAME = `virtual:${PLUGIN_NAME}`;
-// const VIRTUAL_OPTIONS_NAME = "virtual:drupal-hmr-options";
-
-const RUNTIME_CLIENT_RUNTIME_PATH = "/@vite-plugin-drupal-template-hmr-runtime";
-const RUNTIME_CLIENT_ENTRY_PATH = "/@vite-plugin-drupal-template-hmr";
-const composePreambleCode = (options: DrupalHmrOptions) => `
-import {doHMR} from "/${RUNTIME_CLIENT_RUNTIME_PATH.slice(1)}";
-doHMR();
-`;
+const VIRTUAL_NAME = `virtual:${PLUGIN_NAME}`;
+const VIRTUAL_OPTIONS_NAME = "virtual:drupal-hmr-options";
 
 // Get the current directory (standard ESM workaround for __dirname)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientPath = path.resolve(__dirname, "./hmr.js");
-const runtimeCode = `${fs.readFileSync(clientPath, "utf-8")};`;
-
 /**
- * Define options users can pass to your plugin
+ * Define options users can pass to your plugin.
  */
 export type DrupalHmrOptions = {
-  // A custom base path from your website root to your vite project root.
+  // (optional, auto-detected) A custom base path from drupal root to the vite project root.
   // usually: /themes/custom/your-theme
-  basePath?: string;
+  themePath?: string;
+  // (optional, auto-detected) The theme machine-name
   themeName?: string;
 };
 
@@ -36,7 +27,7 @@ export type DrupalHmrOptions = {
  * This relative path is built by traversing upwards from Vite base path until
  * the 'index.php' file is found along the 'core' folder.
  */
-const detectDrupalBasePath = (root: string): string => {
+const detectDrupalthemePath = (root: string): string => {
   let current = root;
   const pathSegments: string[] = [];
 
@@ -55,7 +46,7 @@ const detectDrupalBasePath = (root: string): string => {
 };
 
 const getTemplateId = (file: string, ctx: DrupalHmrOptions): string => {
-  return file.match(new RegExp(`${ctx.basePath}/${TwigType.TEMPLATE}.*`))![0];
+  return file.match(new RegExp(`${ctx.themePath}/${TwigType.TEMPLATE}.*`))![0];
 };
 
 const getComponentId = (file: string, ctx: DrupalHmrOptions): string => {
@@ -68,44 +59,47 @@ export default function viteDrupalHMR(options: DrupalHmrOptions = {}): Plugin {
     name: PLUGIN_NAME,
     apply: "serve",
 
-    // Auto-detect the basePath option if not provided.
+    // Auto-detect the themePath option if not provided.
     configResolved(config) {
-      options.basePath = options.basePath || detectDrupalBasePath(config.root);
-      options.basePath = options.basePath.endsWith("/")
-        ? options.basePath.slice(0, -1)
-        : options.basePath;
+      options.themePath =
+        options.themePath || detectDrupalthemePath(config.root);
+      options.themePath = options.themePath.endsWith("/")
+        ? options.themePath.slice(0, -1)
+        : options.themePath;
       options.themeName =
-        options.themeName || options.basePath.split("/").pop();
+        options.themeName || options.themePath.split("/").pop();
       console.log(`[Drupal HMR] Detected options: ${options}`);
     },
 
     // --- INJECT IMPORT ---
-    transformIndexHtml() {
-      return [
-        {
-          tag: "script",
-          attrs: { type: "module" },
-          children: composePreambleCode(options),
-        },
-      ];
+    transform(code, id) {
+      if (/\.js$/.test(id)) {
+        console.log(`[Drupal HMR] Injecting client into: ${id}`);
+        return {
+          // Inject the import at the very top of the script
+          code: `import '${VIRTUAL_NAME}';\n${code}`,
+          map: null,
+        };
+      }
+      return code;
     },
 
     // --- POINT TO REAL FILE ---
     resolveId(id) {
-      if (
-        id === RUNTIME_CLIENT_RUNTIME_PATH ||
-        id === RUNTIME_CLIENT_ENTRY_PATH
-      ) {
-        return id;
+      // Load the virtual module, proce
+      if (id === VIRTUAL_NAME || id === `/${VIRTUAL_NAME}`) {
+        // Return the absolute path to the real file on disk.
+        // Vite will load it, process TS if needed and serve it.
+        return clientPath;
+      }
+      if (id === VIRTUAL_OPTIONS_NAME) {
+        return "\0" + VIRTUAL_OPTIONS_NAME;
       }
     },
 
     load(id) {
-      if (id === RUNTIME_CLIENT_RUNTIME_PATH) {
-        return runtimeCode;
-      }
-      if (id === RUNTIME_CLIENT_ENTRY_PATH) {
-        return composePreambleCode(options);
+      if (id === "\0" + VIRTUAL_OPTIONS_NAME) {
+        return `export default ${JSON.stringify(options)}`;
       }
     },
 
