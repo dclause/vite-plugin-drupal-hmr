@@ -1,75 +1,59 @@
 # vite-plugin-drupal-hmr
 
-A Vite plugin designed to seamlessly integrate Hot Module Replacement (HMR) for _twig_ files
-into your Drupal theming development workflow 🪄.
+A Vite plugin providing seamless Hot Module Replacement (HMR) for Twig files within Drupal development workflows.
 
-Works both for Twig files from [Drupal twig theming](https://www.drupal.org/docs/develop/theming-drupal/twig-in-drupal)
-and
-from [Single-Directory Components](https://www.drupal.org/docs/develop/theming-drupal/using-single-directory-components)
-templates... and integrates with the new [Canvas](https://www.drupal.org/project/canvas) pages 🎉.
+## Features
 
-## Limitations
+- **Twig HMR:** Update templates without a full page refresh.
+- **SDC Support:** Fully compatible with [Single-Directory Components](<(https://www.drupal.org/docs/develop/theming-drupal/using-single-directory-components)>).
+- **Canvas Integration:** Works with Drupal [Canvas](https://www.drupal.org/project/canvas) pages.
+- **Zero-Config Detection:** Automatically detects theme names and paths relative to the Drupal root.
+- **Vite Dev Server:** The plugin is only active during serve mode.
 
-- Only works
-  with [Twig debug enabled](https://www.drupal.org/docs/develop/theming-drupal/twig-in-drupal/debugging-twig-templates#s-enable-twig-debug-mode).
-- Re-uses the [Vite dev server](https://vite.dev/guide/cli.html#dev-server), so the `/@vite/client` endpoint must be
-  loaded in your pages (see Usage below).
-- Can only perform HMR on templates that were rendered on the current page load. Discovering new or unused Twig
-  templates still requires a full page reload.
+## Requirements
 
-## Usage
+- **Twig Debug Mode:** Must be enabled in Drupal's `services.yml` ([_lean how_](<(https://www.drupal.org/docs/develop/theming-drupal/twig-in-drupal/debugging-twig-templates#s-enable-twig-debug-mode)>)).
+- **Vite Client:** The `/@vite/client` endpoint must be loaded in your Drupal pages. The easiest way to do this is to use the [Drupal Vite module](https://www.drupal.org/project/vite).
 
-1. This plugin will only be active when the Vite [dev server](https://vitejs.dev/guide/cli.html#dev-server) is used.
-2. To use this plugin, you need to have a valid setup with Vite and Drupal.
-   You can use modules like https://www.drupal.org/project/vite to help you do that.
-3. Install it as you would install any `npm` package. Example:
+## Installation
 
 ```shell
 npm install -D vite-plugin-drupal-hmr
 ```
 
-4. Reference the plugin in your `vite.config.ts` file.
+## Usage
+
+Add the plugin to your `vite.config.ts`:
 
 ```js
-// Example Full vite.config.ts (using a standard Drupal path)
-import {defineConfig} from "vite"; // Make sure to show the import for defineConfig
+import { defineConfig } from "vite";
 import viteDrupalHMR from "vite-plugin-drupal-hmr";
 
 export default defineConfig({
-    plugins: [
-        // ...other plugins
-        viteDrupalHMR({
-            /* options */
-        }),
-    ],
-    // ...other necessary Vite configuration (like server block for proxying)
+  plugins: [
+    viteDrupalHMR({
+      // Optional options
+    }),
+  ],
 });
 ```
 
-## Options
+## Configuration Options
 
-```ts
-/**
- * Define options users can pass to your plugin.
- */
-export type DrupalHmrOptions = {
-    // (optional, auto-detected) A custom base path from drupal root to the vite project root.
-    // usually: /themes/custom/your-theme
-    themePath?: string;
-    // (optional, auto-detected) The theme machine-name
-    themeName?: string;
-};
-```
+| Option    | Type   | Description                                                                                                        |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| themePath | string | **Optional:** Relative path from Drupal root to the Vite project root<br/>(e.g., /themes/custom/your-theme).       |
+| themeName | string | **Optional:** The machine name of your theme.<br/>Auto-detected from the themePath directory name if not provided. |
 
-## How it works
+## Limitations
 
-This plugin is leveraging Vite [HMR API](https://vitejs.dev/guide/api-hmr.html#hmr-api)
-and Drupal `twig.config` with active `debug` mode in order to hot reload parts of the page when
-a template is updated.
+- **Existing Elements Only:** Can only perform HMR on templates already rendered on the current page load.
+- **Discovery:** Adding a new Twig template or using a previously unused template requires a full page reload.
 
-This plugin uses Vite hook `handleHotUpdate` and
-[Virtual Modules](https://vitejs.dev/guide/api-plugin.html#virtual-modules-convention) to load some HMR client code on
-the website.
+## Technical Overview
 
-When a twig file changes, the module will perform a `fetch` on the current URL to catch the updated HTML of the page and
-do DOM manipulations to replace the HTML between the twig suggestion comments added by the `twig debug mode`.
+The plugin leverages the Vite `handleHotUpdate` hook to detect `.twig` file changes.
+
+1. **Server-side:** The plugin identifies if the changed file is a standard template or an SDC component. It then broadcasts a message via Vite's WebSocket server.
+2. **Client-side:** An injected script intercepts the update event, performs an asynchronous `fetch` of the current URL, and extracts the new HTML fragment by matching the Twig debug comments.
+3. **Replacement:** It uses the browser's DOM `Range` API to replace the old template content with the newly fetched fragment without losing the global application state.
