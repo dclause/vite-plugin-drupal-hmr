@@ -113,7 +113,7 @@ function findTemplateInHtml(html: string, ctx: TwigUpdateData) {
   if (!output) return [];
 
   // Use matchAll because the template can be used multiple times in the same page.
-  const regexp = new RegExp(`${output.begin}(.*?)${output.end}`, "gmsd");
+  const regexp = new RegExp(`${output.begin}(.*?)${output.end}`, "gmsu");
   return [...html.matchAll(regexp)];
 }
 
