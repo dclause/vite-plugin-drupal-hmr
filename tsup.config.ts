@@ -4,7 +4,7 @@ export default defineConfig((options: Options) => {
   const common: Options = {
     dts: true,
     splitting: false,
-    clean: false,
+    clean: true,
     // Note: tsup utilise esbuild directement, on utilise donc le type Options['esbuildOptions']
     esbuildOptions(opts) {
       if (!options.watch) {
@@ -19,7 +19,6 @@ export default defineConfig((options: Options) => {
       ...common,
       entry: ["src/index.ts"],
       format: ["cjs", "esm"],
-      clean: true,
       external: ["vite"],
       shims: true, // for __dirname  hybrid support CJS/ESM
       outExtension({ format }) {

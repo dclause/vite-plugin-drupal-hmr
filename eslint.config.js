@@ -4,6 +4,9 @@ import globals from "globals";
 import js from "@eslint/js";
 
 export default [
+  {
+    ignores: ["dist/**"], // Add this line
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
