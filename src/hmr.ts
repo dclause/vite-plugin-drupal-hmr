@@ -56,7 +56,7 @@ async function handleUpdate(ctx: TwigUpdateData) {
   const comments = searchTemplateCommentList(walker, ctx);
 
   reloadedTemplates.forEach((match, i) => {
-    replaceTemplate({ template: match[0], comment: comments[i] });
+    replaceTemplate({ template: match[1], comment: comments[i] });
   });
 }
 
@@ -95,10 +95,12 @@ function searchTemplateCommentList(
 
   while ((node = walker.nextNode())) {
     const commentData = transformTextIntoComment((node as Comment).data);
+    const beginRegex = new RegExp(`^${tags.begin}$`, "u");
+    const endRegex = new RegExp(`^${tags.end}$`, "u");
 
-    if (commentData === tags.begin) {
+    if (beginRegex.test(commentData)) {
       beginComment = node as Comment;
-    } else if (beginComment && commentData === tags.end) {
+    } else if (beginComment && endRegex.test(commentData)) {
       list.push({ begin: beginComment, end: node as Comment });
       beginComment = null;
     }
@@ -111,7 +113,7 @@ function findTemplateInHtml(html: string, ctx: TwigUpdateData) {
   if (!output) return [];
 
   // Use matchAll because the template can be used multiple times in the same page.
-  const regexp = new RegExp(`${output.begin}.*?${output.end}`, "gmsd");
+  const regexp = new RegExp(`${output.begin}(.*?)${output.end}`, "gmsd");
   return [...html.matchAll(regexp)];
 }
 
@@ -121,13 +123,13 @@ function getCommentContent(
   switch (ctx.templateType) {
     case TwigType.TEMPLATE:
       return {
-        begin: `<!-- 💡 BEGIN CUSTOM TEMPLATE OUTPUT from '${ctx.templateId}' -->`,
+        begin: `<!-- \\p{Emoji} BEGIN CUSTOM TEMPLATE OUTPUT from '${ctx.templateId}' -->`,
         end: `<!-- END CUSTOM TEMPLATE OUTPUT from '${ctx.templateId}' -->`,
       };
     case TwigType.COMPONENT:
       return {
-        begin: `<!-- 🥚 Component start: ${ctx.templateId} -->`,
-        end: `<!-- 🥚 Component end: ${ctx.templateId} -->`,
+        begin: `<!-- \\p{Emoji} Component start: ${ctx.templateId} -->`,
+        end: `<!-- \\p{Emoji} Component end: ${ctx.templateId} -->`,
       };
   }
 }
