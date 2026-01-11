@@ -2,6 +2,13 @@
 
 A Vite plugin providing seamless Hot Module Replacement (HMR) for Twig files within Drupal development workflows.
 
+<p align="center">
+<img src="https://github.com/dclause/vite-plugin-drupal-hmr/blob/develop/demo.gif?raw=true" alt="Drupal HMR Demo">
+<em>This demo showcases real-time template modifications, including cascading changes and the addition or removal of DOM elements.
+The workflow covers standard Twig templates, Single-Directory Components (SDC), and CSS.
+It also demonstrates how the Vite-powered Tailwind CSS build integrates seamlessly with the HMR process.</em>
+</p>
+
 ## Features
 
 - **Twig HMR:** Update templates without a full page refresh.
