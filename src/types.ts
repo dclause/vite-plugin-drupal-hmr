@@ -1,6 +1,21 @@
 import { TwigType } from "./constants";
 
 /**
+ * Add Drupal JS related structures types.
+ */
+declare global {
+  interface Window {
+    Drupal?: {
+      attachBehaviors: (
+        context: HTMLElement | Document,
+        settings?: object,
+      ) => void;
+    };
+    drupalSettings?: object;
+  }
+}
+
+/**
  * Define options users can pass to your plugin.
  */
 export interface DrupalHmrOptions {
@@ -23,6 +38,7 @@ export interface TemplatePair<T> {
 }
 
 export interface TemplateInfo {
+  templateId: string;
   template: string;
   comment: TemplatePair<Comment>;
 }
