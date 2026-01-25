@@ -56,7 +56,11 @@ async function handleUpdate(ctx: TwigUpdateData) {
   const comments = searchTemplateCommentList(walker, ctx);
 
   reloadedTemplates.forEach((match, i) => {
-    replaceTemplate({ template: match[1], comment: comments[i] });
+    replaceTemplate({
+      templateId: ctx.templateId,
+      template: match[1],
+      comment: comments[i],
+    });
   });
 }
 
@@ -67,7 +71,11 @@ function isTwigDevMode(): boolean {
   return document.documentElement.innerHTML.includes("<!-- THEME DEBUG -->");
 }
 
-function replaceTemplate({ template, comment }: TemplateInfo): void {
+function replaceTemplate({
+  templateId,
+  template,
+  comment,
+}: TemplateInfo): void {
   const parent = comment.end.parentNode;
   if (!parent) return;
 
@@ -80,6 +88,22 @@ function replaceTemplate({ template, comment }: TemplateInfo): void {
   // Insert new content
   const fragment = document.createRange().createContextualFragment(template);
   parent.insertBefore(fragment, comment.end);
+
+  // Re-attach Drupal behaviors for the fragment.
+  const container = fragment.parentElement;
+  if (container && window.Drupal && window.Drupal.attachBehaviors) {
+    window.Drupal.attachBehaviors(container, window.drupalSettings);
+  }
+
+  // Send a custom event.
+  const event = new CustomEvent("drupal-hmr:updated", {
+    detail: {
+      target: container,
+      templateId: templateId,
+    },
+    bubbles: true,
+  });
+  document.dispatchEvent(event);
 }
 
 function searchTemplateCommentList(
