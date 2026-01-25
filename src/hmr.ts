@@ -90,15 +90,14 @@ function replaceTemplate({
   parent.insertBefore(fragment, comment.end);
 
   // Re-attach Drupal behaviors for the fragment.
-  const container = fragment.parentElement;
-  if (container && window.Drupal && window.Drupal.attachBehaviors) {
-    window.Drupal.attachBehaviors(container, window.drupalSettings);
+  if (window.Drupal && window.Drupal.attachBehaviors) {
+    window.Drupal.attachBehaviors(parent, window.drupalSettings);
   }
 
   // Send a custom event.
   const event = new CustomEvent("drupal-hmr:updated", {
     detail: {
-      target: container,
+      target: parent,
       templateId: templateId,
     },
     bubbles: true,
