@@ -78,3 +78,5 @@ The plugin leverages the Vite `handleHotUpdate` hook to detect `.twig` file chan
 2. **Client-side:** An injected script intercepts the update event, performs an asynchronous `fetch` of the current URL, and extracts the new HTML fragment by matching the Twig debug comments.
 3. **Replacement:** It uses the browser's DOM `Range` API to replace the old template content with the newly fetched fragment without losing the global application state.
 4. **JS re-activation:** After replacement, it automatically triggers `Drupal.attachBehaviors()` on the new fragment to ensure JS interactivity (tabs, libraries, etc.) is restored.
+
+For more technical overview, [read here](https://dominique-clause.com/blog/vite-hmr-et-php-ssr-rechargement-instantane-de-fragment-html).
