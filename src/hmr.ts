@@ -91,7 +91,7 @@ function replaceTemplate({
 
   // Re-attach Drupal behaviors for the fragment.
   if (window.Drupal && window.Drupal.attachBehaviors) {
-    window.Drupal.attachBehaviors(parent, window.drupalSettings);
+    window.Drupal.attachBehaviors(parent as HTMLElement, window.drupalSettings);
   }
 
   // Send a custom event.
